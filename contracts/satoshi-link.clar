@@ -96,3 +96,97 @@
     timestamp: uint,
   }
 )
+
+;; Bridge balances per user
+(define-map bridge-balances
+  principal
+  uint
+)
+
+;; Public Functions
+
+;; Initialize bridge (only deployer)
+(define-public (initialize-bridge)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (var-set bridge-paused false)
+    (ok true)
+  )
+)
+
+;; Pause bridge operations (only deployer)
+(define-public (pause-bridge)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (var-set bridge-paused true)
+    (ok true)
+  )
+)
+
+;; Resume bridge (only deployer)
+(define-public (resume-bridge)
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (asserts! (var-get bridge-paused) (err ERROR-INVALID-BRIDGE-STATUS))
+    (var-set bridge-paused false)
+    (ok true)
+  )
+)
+
+;; Add validator (only deployer)
+(define-public (add-validator (validator principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (asserts! (is-valid-principal validator)
+      (err ERROR-INVALID-VALIDATOR-ADDRESS)
+    )
+    (map-set validators validator true)
+    (ok true)
+  )
+)
+
+;; Remove validator (only deployer)
+(define-public (remove-validator (validator principal))
+  (begin
+    (asserts! (is-eq tx-sender CONTRACT-DEPLOYER) (err ERROR-NOT-AUTHORIZED))
+    (asserts! (is-valid-principal validator)
+      (err ERROR-INVALID-VALIDATOR-ADDRESS)
+    )
+    (map-set validators validator false)
+    (ok true)
+  )
+)
+
+;; Initiate a Bitcoin deposit (validator-only)
+(define-public (initiate-deposit
+    (tx-hash (buff 32))
+    (amount uint)
+    (recipient principal)
+    (btc-sender (buff 33))
+  )
+  (begin
+    (asserts! (not (var-get bridge-paused)) (err ERROR-BRIDGE-PAUSED))
+    (asserts! (validate-deposit-amount amount) (err ERROR-INVALID-AMOUNT))
+    (asserts! (get-validator-status tx-sender) (err ERROR-NOT-AUTHORIZED))
+    (asserts! (is-valid-tx-hash tx-hash) (err ERROR-INVALID-TX-HASH))
+    (asserts! (is-none (map-get? deposits { tx-hash: tx-hash }))
+      (err ERROR-ALREADY-PROCESSED)
+    )
+    (asserts! (is-valid-principal recipient)
+      (err ERROR-INVALID-RECIPIENT-ADDRESS)
+    )
+    (asserts! (is-valid-btc-address btc-sender) (err ERROR-INVALID-BTC-ADDRESS))
+
+    (let ((validated-deposit {
+        amount: amount,
+        recipient: recipient,
+        processed: false,
+        confirmations: u0,
+        timestamp: stacks-block-height,
+        btc-sender: btc-sender,
+      }))
+      (map-set deposits { tx-hash: tx-hash } validated-deposit)
+      (ok true)
+    )
+  )
+)
